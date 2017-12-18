@@ -8,5 +8,6 @@
 
 #include "ybtl_types.h"
 #include "ybtl_stack_walker.h"
+#include "ybtl_dwarf.h"
 
 #endif //YBTL_H
