@@ -4,6 +4,8 @@ CMakeScripts
 Testing
 Makefile
 cmake_install.cmake
-install_manifest.txt
+install_manifest.txtl
 compile_commands.json
 CTestTestfile.cmake
+cmake-build-debug/
+.idea/
