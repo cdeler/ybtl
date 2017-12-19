@@ -25,6 +25,6 @@
 #define _unused __attribute__((unused))
 #define _used __attribute__((used))
 #define _constructor __attribute__((constructor))
-
+#define _destructor __attribute__((destructor))
 
 #endif //YBTL_YBTL_TYPES_H

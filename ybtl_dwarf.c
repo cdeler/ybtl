@@ -14,6 +14,7 @@
 #include <fcntl.h>
 
 #include "ybtl_dwarf.h"
+#include "ybtl_types.h"
 
 static char *
 _get_exe_path()
@@ -34,30 +35,42 @@ _get_exe_path()
     return dest;
     }
 
+static void
+read_cu_list(Dwarf_Debug dbg)
+    {
+
+    }
+
+static struct module_data_t
+    {
+    int fd;
+    Dwarf_Debug dbg;
+    Dwarf_Handler errhand;
+    Dwarf_Ptr errarg;
+    Dwarf_Error error;
+    } module_data;
+
+static void _used _constructor
+_init(void)
+    {
+    memset(&module_data, 0, sizeof(struct module_data_t));
+
+    module_data.fd = open(_get_exe_path(), O_RDONLY);
+
+    // malloc here
+    dwarf_init(module_data.fd, DW_DLC_READ, module_data.errhand, module_data.errarg, &module_data.dbg,
+               &module_data.error);
+    }
+
+static void _used _destructor
+_finit(void)
+    {
+    close(module_data.fd);
+    dwarf_finish(module_data.dbg, &module_data.error);
+    }
+
 void
 ybtl_test_dwarf()
     {
-    int fd = -1;
-    Dwarf_Error err;
-    Dwarf_Debug dbg;
-    Dwarf_Handler errhand = 0;
-    Dwarf_Ptr errarg = 0;
-    Dwarf_Error error;
-    int rc;
 
-    do
-        {
-        fd = open(_get_exe_path(), O_RDONLY);
-
-        if (!fd)
-            break;
-
-        rc = dwarf_init(fd, DW_DLC_READ, errhand, errarg, &dbg, &error); // ? == DW_DLV_OK
-
-        rc = dwarf_finish(dbg, &error);
-
-        } while (0);
-
-    if (fd)
-        close(fd);
     }
