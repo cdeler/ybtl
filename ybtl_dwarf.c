@@ -39,44 +39,42 @@ _get_exe_path(pid_t pid)
 	}
 
 static struct module_data_t
-{
-int fd;
-bool enabled;
-Elf *elf;
-Dwarf *dwarf;
-__pid_t pid;
-} module_data;
+	{
+	int fd;
+	bool enabled;
+	Elf *elf;
+	Dwarf *dwarf;
+	__pid_t pid;
+	} module_data;
+
+
+#define check_for_null(_rc) if (!(_rc)) break;
 
 static void _used _constructor
 _init(void)
 	{
-    const char *execPath;
+	const char *execPath;
 	memset(&module_data, 0, sizeof(struct module_data_t));
 
-    do
-        {
-        module_data.pid = getpid();
-        execPath = _get_exe_path(module_data.pid);
+	do
+		{
+		if (elf_version(EV_CURRENT) == EV_NONE)
+			break;
 
-        module_data.fd = open(execPath, O_RDONLY);
-        if (!module_data.fd)
-            break;
+		module_data.pid = getpid();
+		execPath = _get_exe_path(module_data.pid);
 
-        module_data.elf = elf_begin(module_data.fd, ELF_C_READ, NULL);
-        if (!module_data.elf)
-            {
-            int errno = elf_errno();
-            const char *errmsg = elf_errmsg(errno);
-            fprintf(stderr, "errno=%d, msg=%s\n", errno, errmsg);
-            break;
-            }
+		module_data.fd = open(execPath, O_RDONLY);
+		check_for_null(module_data.fd);
 
-        module_data.dwarf = dwarf_begin_elf(module_data.elf, DWARF_C_READ, NULL);
-        if (!module_data.dwarf)
-            break;
+		module_data.elf = elf_begin(module_data.fd, ELF_C_READ, NULL);
+		check_for_null(module_data.elf);
 
-        module_data.enabled = true;
-        } while (0);
+		module_data.dwarf = dwarf_begin_elf(module_data.elf, DWARF_C_READ, NULL);
+		check_for_null(module_data.dwarf);
+
+		module_data.enabled = true;
+		} while (0);
 	}
 
 static void _used _destructor
@@ -120,7 +118,7 @@ _getFnameById(Dwarf_Die *inputDie, size_t idx)
 	Dwarf_Files *files;
 
 	if (!dwarf_diecu(inputDie, &cuDie, NULL, NULL) ||
-	    dwarf_getsrcfiles(&cuDie, &files, NULL) != 0)
+		dwarf_getsrcfiles(&cuDie, &files, NULL) != 0)
 		return NULL;
 
 	return dwarf_filesrc(files, idx, NULL, NULL);
@@ -176,7 +174,7 @@ _handleDwarfFunction(Dwarf_Die *functionDie)
 		}
 	}
 
-extern void
+static void
 _readDwarfData()
 	{
 	Dwarf_Off offset = 0U, lastOffset = 0U;
@@ -184,39 +182,39 @@ _readDwarfData()
 
 	while (dwarf_nextcu(module_data.dwarf, offset, &offset, &hdrSize, 0, 0, 0) == 0)
 		{
-        Dwarf_Die childDie, cuDie;
-        if (dwarf_offdie(module_data.dwarf, lastOffset + hdrSize, &cuDie) == NULL)
+		Dwarf_Die childDie, cuDie;
+		if (dwarf_offdie(module_data.dwarf, lastOffset + hdrSize, &cuDie) == NULL)
 			break;
 		lastOffset = offset;
 
-        if (dwarf_child(&cuDie, &childDie) != 0)
+		if (dwarf_child(&cuDie, &childDie) != 0)
 			continue;
 
 		do
 			{
-            switch (dwarf_tag(&childDie))
+			switch (dwarf_tag(&childDie))
 				{
 				case DW_TAG_entry_point:
 				case DW_TAG_inlined_subroutine:
 				case DW_TAG_subprogram:
-                    _handleDwarfFunction(&childDie);
+					_handleDwarfFunction(&childDie);
 					break;
 				default:
 					break;
 				}
-            } while (dwarf_siblingof(&childDie, &childDie) == 0);
+			} while (dwarf_siblingof(&childDie, &childDie) == 0);
 
 		}
 	}
 
 bool
 ybtl_is_dwarf_enabled()
-    {
-    return module_data.enabled;
-    }
+	{
+	return module_data.enabled;
+	}
 
 void
 ybtl_test_dwarf()
 	{
-    _readDwarfData();
+	_readDwarfData();
 	}
