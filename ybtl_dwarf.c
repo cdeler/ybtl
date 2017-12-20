@@ -21,7 +21,7 @@
 
 
 static char *
-_get_exe_path()
+_get_exe_path(pid_t pid)
 	{
 	static char dest[PATH_MAX];
 
@@ -31,7 +31,6 @@ _get_exe_path()
 
 		memset(dest, 0, sizeof(dest)); // readlink doesn't make null term string
 
-		pid_t pid = getpid();
 		sprintf(path, "/proc/%d/exe", pid);
 		readlink(path, dest, PATH_MAX);
 		}
@@ -44,7 +43,6 @@ static struct module_data_t
 int fd;
 bool enabled;
 Elf *elf;
-Dwfl *dwfl;
 Dwarf *dwarf;
 __pid_t pid;
 } module_data;
@@ -52,30 +50,33 @@ __pid_t pid;
 static void _used _constructor
 _init(void)
 	{
+    const char *execPath;
 	memset(&module_data, 0, sizeof(struct module_data_t));
 
-	// malloc here
-	static char *debuginfo_path;
-	static const Dwfl_Callbacks proc_callbacks =
-			{
-					.find_debuginfo = dwfl_standard_find_debuginfo,
-					.debuginfo_path = &debuginfo_path,
-					.find_elf = dwfl_linux_proc_find_elf,
-					.section_address = dwfl_offline_section_address
-			};
+    do
+        {
+        module_data.pid = getpid();
+        execPath = _get_exe_path(module_data.pid);
 
+        module_data.fd = open(execPath, O_RDONLY);
+        if (!module_data.fd)
+            break;
 
-	module_data.dwfl = dwfl_begin(&proc_callbacks);
+        module_data.elf = elf_begin(module_data.fd, ELF_C_READ, NULL);
+        if (!module_data.elf)
+            {
+            int errno = elf_errno();
+            const char *errmsg = elf_errmsg(errno);
+            fprintf(stderr, "errno=%d, msg=%s\n", errno, errmsg);
+            break;
+            }
 
-	module_data.enabled = (module_data.dwfl != NULL);
+        module_data.dwarf = dwarf_begin_elf(module_data.elf, DWARF_C_READ, NULL);
+        if (!module_data.dwarf)
+            break;
 
-	if (module_data.enabled)
-		{
-		module_data.pid = getpid();
-		module_data.fd = open(_get_exe_path(), O_RDONLY);
-		module_data.elf = elf_begin(module_data.fd, ELF_C_READ, NULL);
-		module_data.dwarf = dwarf_begin_elf(module_data.elf, DWARF_C_READ, NULL);
-		}
+        module_data.enabled = true;
+        } while (0);
 	}
 
 static void _used _destructor
@@ -86,7 +87,6 @@ _finit(void)
 		close(module_data.fd);
 		elf_end(module_data.elf);
 		dwarf_end(module_data.dwarf);
-		dwfl_end(module_data.dwfl);
 		}
 	}
 
@@ -177,41 +177,46 @@ _handleDwarfFunction(Dwarf_Die *functionDie)
 	}
 
 extern void
-_lookupLocation()
+_readDwarfData()
 	{
 	Dwarf_Off offset = 0U, lastOffset = 0U;
 	size_t hdrSize = 0U;
 
 	while (dwarf_nextcu(module_data.dwarf, offset, &offset, &hdrSize, 0, 0, 0) == 0)
 		{
-		Dwarf_Die result, cu_die;
-		if (dwarf_offdie(module_data.dwarf, lastOffset + hdrSize, &cu_die) == NULL)
+        Dwarf_Die childDie, cuDie;
+        if (dwarf_offdie(module_data.dwarf, lastOffset + hdrSize, &cuDie) == NULL)
 			break;
 		lastOffset = offset;
 
-		if (dwarf_child(&cu_die, &result) != 0)
+        if (dwarf_child(&cuDie, &childDie) != 0)
 			continue;
 
 		do
 			{
-			switch (dwarf_tag(&result))
+            switch (dwarf_tag(&childDie))
 				{
 				case DW_TAG_entry_point:
 				case DW_TAG_inlined_subroutine:
 				case DW_TAG_subprogram:
-					_handleDwarfFunction(&result);
+                    _handleDwarfFunction(&childDie);
 					break;
 				default:
 					break;
 				}
-			} while (dwarf_siblingof(&result, &result) == 0);
+            } while (dwarf_siblingof(&childDie, &childDie) == 0);
 
 		}
 	}
 
+bool
+ybtl_is_dwarf_enabled()
+    {
+    return module_data.enabled;
+    }
 
 void
 ybtl_test_dwarf()
 	{
-	_lookupLocation();
+    _readDwarfData();
 	}

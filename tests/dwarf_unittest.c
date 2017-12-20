@@ -15,7 +15,7 @@
 extern void
 test01_smoke_it_works(void **state _unused)
     {
-    ybtl_test_dwarf();
+    assert_true(ybtl_is_dwarf_enabled());
     }
 
 int

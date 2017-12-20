@@ -9,5 +9,7 @@
 void
 ybtl_test_dwarf();
 
+bool
+ybtl_is_dwarf_enabled();
 
 #endif //YBTL_YBTL_DWARF_H
