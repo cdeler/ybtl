@@ -22,9 +22,20 @@
 #define STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH (64U)
 #define STACK_WALKER_MAX_DEPTH (40U)
 
+#define DWARF_SOURCE_FILE_NAME_MAX_LENGTH (64U)
+#define DWARF_MAXIMUM_FUNCTIONS_COUNT (124U)
+
 #define _unused __attribute__((unused))
 #define _used __attribute__((used))
 #define _constructor __attribute__((constructor))
+#define _destructor __attribute__((destructor))
+
+typedef struct
+	{
+	char functionName[STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH];
+	char sourceFileName[DWARF_SOURCE_FILE_NAME_MAX_LENGTH];
+	size_t sourceLine;
+	} function_data_t;
 
 
 #endif //YBTL_YBTL_TYPES_H
