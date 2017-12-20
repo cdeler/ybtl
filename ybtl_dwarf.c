@@ -18,7 +18,27 @@
 
 #include "ybtl_dwarf.h"
 #include "ybtl_types.h"
+#include "ybtl.h"
 
+
+// TODO : move this function to the page, which will be RO after the initialization?
+static struct function_handles_t
+	{
+	size_t functionCount;
+	function_data_t functions[DWARF_MAXIMUM_FUNCTIONS_COUNT];
+	} _functionHandles;
+
+static struct module_data_t
+	{
+	int fd;
+	bool enabled;
+	Elf *elf;
+	Dwarf *dwarf;
+	__pid_t pid;
+	} module_data;
+
+static void
+_readDwarfData();
 
 static char *
 _get_exe_path(pid_t pid)
@@ -38,15 +58,6 @@ _get_exe_path(pid_t pid)
 	return dest;
 	}
 
-static struct module_data_t
-	{
-	int fd;
-	bool enabled;
-	Elf *elf;
-	Dwarf *dwarf;
-	__pid_t pid;
-	} module_data;
-
 
 #define check_for_null(_rc) if (!(_rc)) break;
 
@@ -55,6 +66,7 @@ _init(void)
 	{
 	const char *execPath;
 	memset(&module_data, 0, sizeof(struct module_data_t));
+	memset(&_functionHandles, 0, sizeof(struct function_handles_t));
 
 	do
 		{
@@ -72,6 +84,8 @@ _init(void)
 
 		module_data.dwarf = dwarf_begin_elf(module_data.elf, DWARF_C_READ, NULL);
 		check_for_null(module_data.dwarf);
+
+		_readDwarfData();
 
 		module_data.enabled = true;
 		} while (0);
@@ -170,8 +184,44 @@ _handleDwarfFunction(Dwarf_Die *functionDie)
 
 	if (*functionName && *fileName && functionLine)
 		{
-		printf("Dwarf function %s, %s:%lu\n", functionName, basename(fileName), functionLine);
+		function_data_t *handle = _functionHandles.functions + _functionHandles.functionCount;
+
+		strncpy(handle->functionName, functionName, STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH);
+		strncpy(handle->sourceFileName, basename(fileName), DWARF_SOURCE_FILE_NAME_MAX_LENGTH);
+		handle->sourceLine = functionLine;
+
+		++_functionHandles.functionCount;
 		}
+	}
+
+static int
+_compareFunctionData(const void *f1, const void *f2)
+	{
+	const function_data_t *func1 = f1;
+	const function_data_t *func2 = f2;
+
+	int res = strcmp(func1->functionName, func2->functionName);
+
+	if (res == 0)
+		{
+		res = strcmp(func1->sourceFileName, func2->sourceFileName);
+
+		if (res == 0)
+			{
+			res = func1->sourceLine == func2->sourceLine;
+			}
+		}
+
+	return res;
+	}
+
+static int
+_searchFunctionData(const void *f1, const void *f2)
+	{
+	const function_data_t *func1 = f1;
+	const function_data_t *func2 = f2;
+
+	return strcmp(func1->functionName, func2->functionName);
 	}
 
 static void
@@ -205,6 +255,17 @@ _readDwarfData()
 			} while (dwarf_siblingof(&childDie, &childDie) == 0);
 
 		}
+
+	qsort(_functionHandles.functions, _functionHandles.functionCount, sizeof(function_data_t), _compareFunctionData);
+#if 0
+	size_t i;
+
+	for (i = 0; i < _functionHandles.functionCount; ++i)
+		{
+		function_data_t *f = _functionHandles.functions + i;
+		printf("Dwarf function %s, %s:%lu\n", f->functionName, f->sourceFileName, f->sourceLine);
+		}
+#endif
 	}
 
 bool
@@ -213,8 +274,19 @@ ybtl_is_dwarf_enabled()
 	return module_data.enabled;
 	}
 
-void
-ybtl_test_dwarf()
+const function_data_t *
+ybtl_get_function_data(const char *functionName)
 	{
-	_readDwarfData();
+	function_data_t dummy;
+	dummy.sourceLine = 0U;
+	*dummy.sourceFileName = '\0';
+	strncpy(dummy.functionName, functionName, STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH);
+
+	const function_data_t *res = bsearch(&dummy,
+										 _functionHandles.functions,
+										 _functionHandles.functionCount,
+										 sizeof(function_data_t),
+										 _searchFunctionData);
+
+	return res;
 	}

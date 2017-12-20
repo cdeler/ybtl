@@ -6,10 +6,13 @@
 #ifndef YBTL_YBTL_DWARF_H
 #define YBTL_YBTL_DWARF_H
 
-void
-ybtl_test_dwarf();
+#include "ybtl_types.h"
+
 
 bool
 ybtl_is_dwarf_enabled();
+
+const function_data_t *
+ybtl_get_function_data(const char *functionName);
 
 #endif //YBTL_YBTL_DWARF_H
