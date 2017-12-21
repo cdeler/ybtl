@@ -17,19 +17,20 @@ typedef void (*item_dealloc_t)(void *);
 linked_list_handle
 linked_list_open(item_dealloc_t deallocator);
 
-void
-linked_list_close(linked_list_handle *handle) __attribute__((nonnull(1)));
+void __attribute__((nonnull(1)))
+linked_list_close(linked_list_handle *handle);
 
-size_t
-linked_list_size(linked_list_handle handle) __attribute__((nonnull(1)));
+size_t  __attribute__((nonnull(1))) __attribute__((pure))
+linked_list_size(linked_list_handle handle);
 
-void
-linked_list_append(linked_list_handle handle, void *element) __attribute__((nonnull(1)));
+void __attribute__((nonnull(1)))
+linked_list_append(linked_list_handle handle, void *element);
 
-bool
-linked_list_iterate(linked_list_handle handle, linked_list_item *pIteratedItem) __attribute__((nonnull(1, 2)));
+bool __attribute__((nonnull(1, 2)))
+linked_list_iterate(linked_list_handle handle, linked_list_item *pIteratedItem);
 
 void *
-linked_list_get_value(linked_list_item item)  __attribute__((nonnull(1)));
+__attribute__((nonnull(1))) __attribute__((pure))
+linked_list_get_value(linked_list_item item);
 
 #endif //YBTL_LINKED_LIST_H

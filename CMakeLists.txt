@@ -9,7 +9,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
 set(CMAKE_TESTS_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 
-set(LINK_DEPENDENCIES ybtl cmocka dl elf dw)
+set(LINK_DEPENDENCIES ybtl linked_list cmocka dl elf dw)
 
 include_directories(${PROJECTS_DIR})
 include_directories(${PROJECTS_DIR}/utils/linked_list)

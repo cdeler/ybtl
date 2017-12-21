@@ -7,8 +7,6 @@
 #include <memory.h>
 #include "linked_list.h"
 
-typedef struct _list_item _list_item_t;
-
 struct _list_item
 {
 void *value;
@@ -135,7 +133,6 @@ linked_list_iterate(linked_list_handle handle, linked_list_item *pIteratedItem)
 			result = true;
 			}
 		}
-
 
 	return result;
 	}
