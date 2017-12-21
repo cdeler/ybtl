@@ -12,8 +12,10 @@ set(CMAKE_TESTS_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 set(LINK_DEPENDENCIES ybtl cmocka dl elf dw)
 
 include_directories(${PROJECTS_DIR})
+include_directories(${PROJECTS_DIR}/utils/linked_list)
 
-include(utils/unit_tests.cmake)
+include(${PROJECTS_DIR}/utils/unit_tests.cmake)
+add_subdirectory(${PROJECTS_DIR}/utils/linked_list/)
 
 add_library(ybtl ybtl_stack_walker.c ybtl_stack_walker.h ybtl.h ybtl_types.h ybtl_dwarf.c ybtl_dwarf.h)
 
