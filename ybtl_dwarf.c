@@ -16,6 +16,8 @@
 #include <dwarf.h>
 #include <libgen.h>
 
+#include "linked_list.h"
+
 #include "ybtl_dwarf.h"
 #include "ybtl_types.h"
 #include "ybtl.h"
@@ -23,22 +25,28 @@
 
 // TODO : move this function to the page, which will be RO after the initialization?
 static struct function_handles_t
-	{
-	size_t functionCount;
-	function_data_t functions[DWARF_MAXIMUM_FUNCTIONS_COUNT];
-	} _functionHandles;
+{
+size_t functionCount;
+function_data_t *functions; // [DWARF_MAXIMUM_FUNCTIONS_COUNT];
+} _functionHandles;
 
 static struct module_data_t
-	{
-	int fd;
-	bool enabled;
-	Elf *elf;
-	Dwarf *dwarf;
-	__pid_t pid;
-	} module_data;
+{
+int fd;
+bool enabled;
+Elf *elf;
+Dwarf *dwarf;
+__pid_t pid;
+} module_data;
 
 static void
 _readDwarfData();
+
+static struct function_handles_t *
+_getFunctionHandles()
+	{
+	return &_functionHandles;
+	}
 
 static char *
 _get_exe_path(pid_t pid)
@@ -66,7 +74,7 @@ _init(void)
 	{
 	const char *execPath;
 	memset(&module_data, 0, sizeof(struct module_data_t));
-	memset(&_functionHandles, 0, sizeof(struct function_handles_t));
+	memset(_getFunctionHandles(), 0, sizeof(struct function_handles_t));
 
 	do
 		{
@@ -132,7 +140,7 @@ _getFnameById(Dwarf_Die *inputDie, size_t idx)
 	Dwarf_Files *files;
 
 	if (!dwarf_diecu(inputDie, &cuDie, NULL, NULL) ||
-		dwarf_getsrcfiles(&cuDie, &files, NULL) != 0)
+	    dwarf_getsrcfiles(&cuDie, &files, NULL) != 0)
 		return NULL;
 
 	return dwarf_filesrc(files, idx, NULL, NULL);
@@ -173,24 +181,24 @@ _functionLine(Dwarf_Die *functionDie)
 	}
 
 static void
-_handleDwarfFunction(Dwarf_Die *functionDie)
+_handleDwarfFunction(Dwarf_Die *functionDie, linked_list_handle list)
 	{
 	char functionName[256];
 	char fileName[256];
-
+	struct function_handles_t *handles = _getFunctionHandles();
 	size_t functionLine = _functionLine(functionDie);
+
 	_getSourceFileName(functionDie, fileName, sizeof(fileName));
 	_getFunctionName(functionDie, functionName, sizeof(functionName));
-
 	if (*functionName && *fileName && functionLine)
 		{
-		function_data_t *handle = _functionHandles.functions + _functionHandles.functionCount;
+		function_data_t *handle = calloc(1, sizeof(function_data_t));
 
 		strncpy(handle->functionName, functionName, STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH);
 		strncpy(handle->sourceFileName, basename(fileName), DWARF_SOURCE_FILE_NAME_MAX_LENGTH);
 		handle->sourceLine = functionLine;
 
-		++_functionHandles.functionCount;
+		linked_list_append(list, handle);
 		}
 	}
 
@@ -224,11 +232,15 @@ _searchFunctionData(const void *f1, const void *f2)
 	return strcmp(func1->functionName, func2->functionName);
 	}
 
+
 static void
 _readDwarfData()
 	{
 	Dwarf_Off offset = 0U, lastOffset = 0U;
 	size_t hdrSize = 0U;
+	struct function_handles_t *handles = _getFunctionHandles();
+	linked_list_handle linkedList = linked_list_open(free);
+	function_data_t *pFunctionData;
 
 	while (dwarf_nextcu(module_data.dwarf, offset, &offset, &hdrSize, 0, 0, 0) == 0)
 		{
@@ -247,7 +259,7 @@ _readDwarfData()
 				case DW_TAG_entry_point:
 				case DW_TAG_inlined_subroutine:
 				case DW_TAG_subprogram:
-					_handleDwarfFunction(&childDie);
+					_handleDwarfFunction(&childDie, linkedList);
 					break;
 				default:
 					break;
@@ -256,7 +268,22 @@ _readDwarfData()
 
 		}
 
-	qsort(_functionHandles.functions, _functionHandles.functionCount, sizeof(function_data_t), _compareFunctionData);
+	handles->functions = calloc(linked_list_size(linkedList), sizeof(function_data_t));
+
+	linked_list_item iteratedItem = NULL;
+	pFunctionData = handles->functions;
+
+	while (linked_list_iterate(linkedList, &iteratedItem))
+		{
+		memcpy(pFunctionData, linked_list_get_value(iteratedItem), sizeof(function_data_t));
+		++pFunctionData;
+		}
+
+	handles->functionCount = linked_list_size(linkedList);
+
+	linked_list_close(&linkedList);
+
+	qsort(handles->functions, handles->functionCount, sizeof(function_data_t), _compareFunctionData);
 #if 0
 	size_t i;
 
@@ -278,15 +305,28 @@ const function_data_t *
 ybtl_get_function_data(const char *functionName)
 	{
 	function_data_t dummy;
-	dummy.sourceLine = 0U;
-	*dummy.sourceFileName = '\0';
-	strncpy(dummy.functionName, functionName, STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH);
+	const function_data_t *res;
 
-	const function_data_t *res = bsearch(&dummy,
-										 _functionHandles.functions,
-										 _functionHandles.functionCount,
-										 sizeof(function_data_t),
-										 _searchFunctionData);
+	if (ybtl_is_dwarf_enabled())
+		{
+		// search for first function with this name. It's not a good idea for static functions inside different .c files
+		// TODO: think about the above statement
+		struct function_handles_t *handles = _getFunctionHandles();
+
+		dummy.sourceLine = 0U;
+		*dummy.sourceFileName = '\0';
+		strncpy(dummy.functionName, functionName, STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH);
+
+		res = bsearch(&dummy,
+		              handles->functions,
+		              handles->functionCount,
+		              sizeof(function_data_t),
+		              _searchFunctionData);
+		}
+	else
+		{
+		res = NULL;
+		}
 
 	return res;
 	}
