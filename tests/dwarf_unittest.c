@@ -15,11 +15,11 @@
 
 #include "ybtl.h"
 
-static void *
+static size_t
 __attribute__((noinline))
 _get_ip()
 	{
-	return __builtin_return_address(0) + 4U;
+	return __builtin_return_address(0);
 	}
 
 
@@ -33,7 +33,7 @@ static void
 test02_get_function_data(void **state _unused)
 	{
 	size_t lineNo = __LINE__ - 2;
-	const char *fileName = basename(__FILE__);
+	char *fileName = basename(__FILE__);
 	const function_data_t *data = ybtl_get_function_data(__func__);
 
 	assert_non_null(data);
@@ -45,19 +45,22 @@ test02_get_function_data(void **state _unused)
 static void
 test03_get_line_info(void **state _unused)
 	{
-	function_data_t info;
+	function_data_t *info;
 	memset(&info, 0, sizeof(function_data_t));
 
-	void *ip = _get_ip();
+	size_t ip = _get_ip();
 
-	ybtl_get_line_info(ip, &info);
+	bool rc = ybtl_get_line_info(ip, &info);
+
+	assert_true(rc);
+	assert_non_null(info);
+
 	size_t lineno = __LINE__ - 1;
-	const char *fileName = basename(__FILE__);
-	const char *fname = __func__;
+	char *fileName = basename(__FILE__);
 
-	assert_int_equal(info.sourceLine, lineno);
-	assert_string_equal(info.functionName, fname);
-	assert_string_equal(info.sourceFileName, fileName);
+	assert_string_equal(info->functionName, __func__);
+	assert_string_equal(info->sourceFileName, fileName);
+	assert_int_equal(info->sourceLine, lineno);
 
 	}
 

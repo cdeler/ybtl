@@ -24,10 +24,17 @@
 
 
 // TODO : move this function to the page, which will be RO after the initialization?
+typedef struct
+{
+Dwarf_Addr highPc;
+Dwarf_Addr lowPc;
+function_data_t data;
+} _extended_function_data_t;
+
 static struct function_handles_t
 {
 size_t functionCount;
-function_data_t *functions; // [DWARF_MAXIMUM_FUNCTIONS_COUNT];
+_extended_function_data_t *functions; // [DWARF_MAXIMUM_FUNCTIONS_COUNT];
 } _functionHandles;
 
 static struct module_data_t
@@ -174,48 +181,136 @@ _functionLine(Dwarf_Die *functionDie)
 
 	memset(&da, 0, sizeof(Dwarf_Attribute));
 	dwarf_attr_integrate(functionDie, DW_AT_decl_line, &da);
-
 	dwarf_formudata(&da, &result);
 
 	return result;
 	}
+
+static Dwarf_Addr
+_getLowPc(Dwarf_Die *functionDie)
+	{
+	Dwarf_Attribute da;
+	Dwarf_Addr addr;
+	unsigned int form;
+	size_t r;
+
+	memset(&da, 0, sizeof(Dwarf_Attribute));
+
+	dwarf_attr(functionDie, DW_AT_low_pc, &da);
+
+	form = dwarf_whatform(&da);
+	switch (form)
+		{
+		case DW_FORM_addr:
+			dwarf_formaddr(&da, &addr);
+			break;
+		case DW_FORM_data4:
+		case DW_FORM_data8:
+			dwarf_formudata(&da, &r);
+			addr = r;
+			break;
+		default:
+			addr = 0U;
+			break;
+		}
+
+
+	return addr;
+	}
+
+static void
+_getHighPc(Dwarf_Die *functionDie, size_t *value, unsigned int *dataForm)
+	{
+	Dwarf_Attribute da;
+	Dwarf_Addr addr;
+	unsigned int form;
+	size_t r;
+
+	memset(&da, 0, sizeof(Dwarf_Attribute));
+
+	dwarf_attr_integrate(functionDie, DW_AT_high_pc, &da);
+
+	form = dwarf_whatform(&da);
+	switch (form)
+		{
+		case DW_FORM_addr:
+			dwarf_formaddr(&da, &addr);
+			*value = addr;
+			break;
+		case DW_FORM_data8:
+		case DW_FORM_data4:
+			dwarf_formudata(&da, &r);
+			*value = r;
+			break;
+		default:
+			*value = 0U;
+			break;
+		}
+
+	*dataForm = form;
+	}
+
 
 static void
 _handleDwarfFunction(Dwarf_Die *functionDie, linked_list_handle list)
 	{
 	char functionName[256];
 	char fileName[256];
+	size_t highPcValue;
+	unsigned int highPcType;
+	Dwarf_Addr lowPc, highPc;
 	size_t functionLine = _functionLine(functionDie);
 
 	_getSourceFileName(functionDie, fileName, sizeof(fileName));
 	_getFunctionName(functionDie, functionName, sizeof(functionName));
-	if (*functionName && *fileName && functionLine)
+
+	_getHighPc(functionDie, &highPcValue, &highPcType);
+	lowPc = _getLowPc(functionDie);
+
+	switch (highPcType)
 		{
-		function_data_t *handle = calloc(1, sizeof(function_data_t));
+		case DW_FORM_data8:
+		case DW_FORM_data4:
+			highPc = lowPc + highPcValue;
+			break;
+		case DW_FORM_addr:
+			highPc = highPcValue;
+			break;
+		default:
+			highPc = 0U;
+			break;
+		}
 
-		strncpy(handle->functionName, functionName, STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH);
-		strncpy(handle->sourceFileName, basename(fileName), DWARF_SOURCE_FILE_NAME_MAX_LENGTH);
-		handle->sourceLine = functionLine;
+	if (*functionName && *fileName && functionLine && highPc && lowPc)
+		{
+		_extended_function_data_t *newData = calloc(1, sizeof(_extended_function_data_t));
 
-		linked_list_append(list, handle);
+		strncpy(newData->data.functionName, functionName, STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH);
+		strncpy(newData->data.sourceFileName, basename(fileName), DWARF_SOURCE_FILE_NAME_MAX_LENGTH);
+		newData->data.sourceLine = functionLine;
+
+		newData->highPc = highPc;
+		newData->lowPc = lowPc;
+
+		linked_list_append(list, newData);
 		}
 	}
 
 static int
 _compareFunctionData(const void *f1, const void *f2)
 	{
-	const function_data_t *func1 = f1;
-	const function_data_t *func2 = f2;
+	const _extended_function_data_t *func1 = f1;
+	const _extended_function_data_t *func2 = f2;
 
-	int res = strcmp(func1->functionName, func2->functionName);
+	int res = strcmp(func1->data.functionName, func2->data.functionName);
 
 	if (res == 0)
 		{
-		res = strcmp(func1->sourceFileName, func2->sourceFileName);
+		res = strcmp(func1->data.sourceFileName, func2->data.sourceFileName);
 
 		if (res == 0)
 			{
-			res = func1->sourceLine == func2->sourceLine;
+			res = func1->data.sourceLine == func2->data.sourceLine;
 			}
 		}
 
@@ -225,10 +320,10 @@ _compareFunctionData(const void *f1, const void *f2)
 static int
 _searchFunctionData(const void *f1, const void *f2)
 	{
-	const function_data_t *func1 = f1;
-	const function_data_t *func2 = f2;
+	const _extended_function_data_t *func1 = f1;
+	const _extended_function_data_t *func2 = f2;
 
-	return strcmp(func1->functionName, func2->functionName);
+	return strcmp(func1->data.functionName, func2->data.functionName);
 	}
 
 
@@ -239,7 +334,7 @@ _readDwarfData()
 	size_t hdrSize = 0U;
 	struct function_handles_t *handles = _getFunctionHandles();
 	linked_list_handle linkedList = linked_list_open(free);
-	function_data_t *pFunctionData;
+	_extended_function_data_t *pFunctionData;
 
 	while (dwarf_nextcu(module_data.dwarf, offset, &offset, &hdrSize, 0, 0, 0) == 0)
 		{
@@ -274,7 +369,7 @@ _readDwarfData()
 
 	while (linked_list_iterate(linkedList, &iteratedItem))
 		{
-		memcpy(pFunctionData, linked_list_get_value(iteratedItem), sizeof(function_data_t));
+		memcpy(pFunctionData, linked_list_get_value(iteratedItem), sizeof(_extended_function_data_t));
 		++pFunctionData;
 		}
 
@@ -282,7 +377,7 @@ _readDwarfData()
 
 	linked_list_close(&linkedList);
 
-	qsort(handles->functions, handles->functionCount, sizeof(function_data_t), _compareFunctionData);
+	qsort(handles->functions, handles->functionCount, sizeof(_extended_function_data_t), _compareFunctionData);
 #if 0
 	size_t i;
 
@@ -304,6 +399,7 @@ const function_data_t *
 ybtl_get_function_data(const char *functionName)
 	{
 	function_data_t dummy;
+	const _extended_function_data_t *lookingFor;
 	const function_data_t *res;
 
 	if (ybtl_is_dwarf_enabled())
@@ -316,11 +412,12 @@ ybtl_get_function_data(const char *functionName)
 		*dummy.sourceFileName = '\0';
 		strncpy(dummy.functionName, functionName, STACK_WALKER_IDENTEFER_NAME_MAX_LENGTH);
 
-		res = bsearch(&dummy,
-		              handles->functions,
-		              handles->functionCount,
-		              sizeof(function_data_t),
-		              _searchFunctionData);
+		lookingFor = bsearch(&dummy,
+		                     handles->functions,
+		                     handles->functionCount,
+		                     sizeof(_extended_function_data_t),
+		                     _searchFunctionData);
+		res = &(lookingFor->data);
 		}
 	else
 		{
@@ -330,8 +427,34 @@ ybtl_get_function_data(const char *functionName)
 	return res;
 	}
 
-void
-ybtl_get_line_info(const void *ip, function_data_t *outData)
+bool
+ybtl_get_line_info(const size_t ip, function_data_t **outData)
 	{
+	_extended_function_data_t *iter, *lookingFor;
+	size_t i;
+	bool result = false;
+	*outData = NULL;
 
+	if (ybtl_is_dwarf_enabled())
+		{
+		struct function_handles_t *handles = _getFunctionHandles();
+		lookingFor = NULL;
+
+		for (i = 0, iter = handles->functions; i < handles->functionCount; ++i, ++iter)
+			{
+			if (iter->lowPc <= ip && ip <= iter->highPc)
+				{
+				lookingFor = iter;
+				break;
+				}
+			}
+
+		if (lookingFor)
+			{
+			*outData = &(lookingFor->data);
+			result = true;
+			}
+		}
+
+	return result;
 	}
