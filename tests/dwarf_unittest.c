@@ -11,8 +11,17 @@
 #include <cmocka.h>
 #include <ybtl.h>
 #include <libgen.h>
+#include <ybtl_types.h>
 
 #include "ybtl.h"
+
+static void *
+__attribute__((noinline))
+_get_ip()
+	{
+	return __builtin_return_address(0) + 4U;
+	}
+
 
 static void
 test01_smoke_it_works(void **state _unused)
@@ -32,13 +41,34 @@ test02_get_function_data(void **state _unused)
 	assert_string_equal(data->functionName, __func__);
 	assert_string_equal(data->sourceFileName, fileName);
 	}
+
+static void
+test03_get_line_info(void **state _unused)
+	{
+	function_data_t info;
+	memset(&info, 0, sizeof(function_data_t));
+
+	void *ip = _get_ip();
+
+	ybtl_get_line_info(ip, &info);
+	size_t lineno = __LINE__ - 1;
+	const char *fileName = basename(__FILE__);
+	const char *fname = __func__;
+
+	assert_int_equal(info.sourceLine, lineno);
+	assert_string_equal(info.functionName, fname);
+	assert_string_equal(info.sourceFileName, fileName);
+
+	}
+
 int
 main(int argc, char **argv)
     {
     const struct CMUnitTest tests[] =
             {
-					cmocka_unit_test(test01_smoke_it_works),
-					cmocka_unit_test(test02_get_function_data),
+		            cmocka_unit_test(test01_smoke_it_works),
+		            cmocka_unit_test(test02_get_function_data),
+		            cmocka_unit_test(test03_get_line_info),
             };
 
     const size_t testsCount = sizeof(tests) / sizeof(struct CMUnitTest);

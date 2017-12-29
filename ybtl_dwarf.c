@@ -185,7 +185,6 @@ _handleDwarfFunction(Dwarf_Die *functionDie, linked_list_handle list)
 	{
 	char functionName[256];
 	char fileName[256];
-	struct function_handles_t *handles = _getFunctionHandles();
 	size_t functionLine = _functionLine(functionDie);
 
 	_getSourceFileName(functionDie, fileName, sizeof(fileName));
@@ -329,4 +328,10 @@ ybtl_get_function_data(const char *functionName)
 		}
 
 	return res;
+	}
+
+void
+ybtl_get_line_info(const void *ip, function_data_t *outData)
+	{
+
 	}
